@@ -1,13 +1,13 @@
 import { Request, Response } from 'express'
 import knex from '../../database/connection'
-import shortid from 'shortid'
-const hostUrl = 'http://localhost:9090'
+import { generate } from 'shortid'
+const hostUrl = process.env.API_URL
 
 const url = {
   create: async function (req: Request, res: Response) {
     const { originalUrl, userId, description } = req.body
     let { name } = req.body
-    if (!name) name = shortid.generate()
+    if (!name) name = generate()
 
     const queryName = await knex.from('urls').select('name').where({ name: name })
     if (queryName.length > 0) return res.status(400).send('This name is already in use')
@@ -32,7 +32,7 @@ const url = {
     return res.json(shortUrl)
   },
   list: async function (req: Request, res: Response) {
-    const list = await knex.from('urls').select('*').where({ isVisible: true })
+    const list = await knex.from('urls').select('*').where({ active: true })
     return res.status(200).send(list)
   },
   redirect: async function (req: Request, res: Response) {
