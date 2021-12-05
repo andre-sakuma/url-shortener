@@ -3,14 +3,14 @@ import knex from '../../database/connection'
 import * as uniqid from 'uniqid'
 import { sign } from 'jsonwebtoken'
 import { compare, genSalt, hash } from 'bcrypt'
-import { User } from './type'
+import { User } from './types'
 
 const user = {
   login: async (req: Request, res: Response) => {
     const { username, password } = req.body
     if (!username || !password) return res.status(400).send('username or password is missing')
 
-    const user: User = await knex.from('users')
+    const user: User = await knex.from('users').first()
       .where({ active: true, username })
       .orWhere({ active: true, email: username })
       .first()
@@ -32,8 +32,13 @@ const user = {
   create: async function (req: Request, res: Response) {
     const { username, password, email } = req.body
     if(!username || !password || !email) return res.status(400).send('username or id or or email is missing')
-    const queryName = await knex.from('users').where({ username }).orWhere({ email }).select('username', 'email')
-    if (queryName.length > 0) return res.status(400).send('This username or email is already in use')
+    const duplicatedUser = await knex.from('users')
+      .where({ username })
+      .orWhere({ email })
+      .select('username', 'email')
+      .first()
+
+    if (duplicatedUser) return res.status(400).send('This username or email is already in use')
 
     const id = uniqid()
     const createdAt = new Date()

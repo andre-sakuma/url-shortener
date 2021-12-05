@@ -3,8 +3,9 @@ import * as Knex from 'knex'
 export async function up(knex: Knex) {
   return knex.schema.createTable('urls', table => {
     table.uuid('id').primary()
-    table.boolean('active')
-    table.boolean('shareable')
+    table.string('categoryId')
+    table.boolean('active').notNullable()
+    table.boolean('shareable').notNullable()
     table.string('userId').notNullable()
     table.decimal('clicks').notNullable()
     table.string('thumbUrl')
@@ -12,24 +13,9 @@ export async function up(knex: Knex) {
     table.string('code').notNullable()
     table.string('description').notNullable()
     table.string('shortUrl').notNullable()
-    table.timestamp('createdAt')
+    table.timestamp('createdAt').notNullable()
+    table.timestamp('expiresAt').notNullable()
   })
-}
-
-export interface Url {
-	active: boolean
-	shareable: boolean
-	user: {
-		id: string
-		username: string
-	}
-	id: string
-	clicks: number
-	thumbUrl: string
-	redirectUrl: string
-	code: string
-	createdAt: Date
-	expiresAt: Date
 }
 
 export async function down(knex: Knex) {

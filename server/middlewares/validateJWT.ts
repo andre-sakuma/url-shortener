@@ -15,7 +15,7 @@ export default async function validation(
     const decoded: any = verify(token, process.env.TOKEN_SECRET)
     const { id, email, username } = decoded
     const user = await knex.from('users')
-      .where({ id, email, username })
+      .where({ id, email, username, active: true })
       .select('id', 'email', 'username')
       .first()
     if (!user) throw new Error('invalid token')
