@@ -4,18 +4,20 @@ import knex from '../../database/connection'
 import { generate } from 'shortid'
 import * as dayjs from 'dayjs'
 import { Url } from './types'
+import BadRequest from '../../errors/BadRequest'
+import NotFound from '../../errors/NotFound'
 
 const url = {
-  create: async function (req: PopulatedRequest, res: Response) {
-    const { shareable, redirectUrl, categoryId, expectedCode, description, lifetime = 300 } = req.body
-    if (!shareable) return res.status(400).send('shareable is missing')
-    if (!redirectUrl) return res.status(400).send('redirectUrl is missing')
-    if (!categoryId) return res.status(400).send('categoryId is missing')
-    if (!expectedCode) return res.status(400).send('expectedCode is missing')
-    if (!description) return res.status(400).send('description is missing')
+  create: async function (context: PopulatedRequest) {
+    const { shareable, redirectUrl, categoryId, expectedCode, description, lifetime = 300 } = context.body
+    if (!shareable) throw new BadRequest('shareable is missing')
+    if (!redirectUrl) throw new BadRequest('redirectUrl is missing')
+    if (!categoryId) throw new BadRequest('categoryId is missing')
+    if (!expectedCode) throw new BadRequest('expectedCode is missing')
+    if (!description) throw new BadRequest('description is missing')
 
     const category = await knex.from('categories').select('name').first()
-    if (!category) return res.status(404).send('This category does not exists')
+    if (!category) throw new NotFound('This category does not exists')
 
     const code = expectedCode || generate()
 
@@ -24,14 +26,14 @@ const url = {
       .where({ code, active: true })
       .first()
 
-    if (duplicatedUrl) return res.status(400).send('This code is already in use')
+    if (duplicatedUrl) throw new BadRequest('This code is already in use')
 
     const urlId = generate()
     const shortUrl = `${process.env.API_URL}/${code}`
     const clicks = 0
     const createdAt = dayjs().toDate()
     const expiresAt = dayjs(createdAt).add(lifetime, 'second').toDate()
-    const userId = req.user.id
+    const userId = context.user.id
     const active = true
 
     const url: Url = {
@@ -53,53 +55,86 @@ const url = {
     await trx('urls').insert(url)
     await trx.commit()
 
-    return res.json(shortUrl)
+    return { shortUrl }
   },
-  list: async function (req: PopulatedRequest, res: Response) {
-    const list = await knex.from('urls').where({ active: true, shareable: true })
-    return res.status(200).send(list)
-  },
-  adminList: async (req: PopulatedRequest, res: Response) => {
+  list: async function (context: PopulatedRequest) {
     const list = await knex.from('urls')
-    return res.status(200).send(list)
+      .where({ active: true, shareable: true })
+      .orWhere({ userId: context.user.id })
+    return list
   },
-  redirect: async function (req: PopulatedRequest, res: Response) {
-    const { code } = req.params
-    const url = await knex.from('urls').where({ code }).first()
-    console.log(url)
-    if (!url) return res.status(400).send('This name was not found')
+  search: async (context: PopulatedRequest) => {
+    const { categories = [], q } = context.query
+    let query = knex.from('urls').where({ active: true, shareable: true })
+
+    if (q && categories.length) {
+      query = query.whereIn('categoryId', categories as string[])
+        .andWhere(function() {
+          this.where('code', 'like', `%${q}%`)
+          .orWhere('redirectUrl', 'like', `%${q}%`)
+        })
+    } else {
+      if (categories.length) {
+        query = query.whereIn('categoryId', categories as string[])
+      }
+  
+      if (q) {
+        query = query.andWhere(function() {
+          this.where('code', 'like', `%${q}%`)
+          .orWhere('redirectUrl', 'like', `%${q}%`)
+        })
+      }
+    }
+
+    const result = await query
+    return result
+  },
+  adminList: async (context: PopulatedRequest) => {
+    const list = await knex.from('urls')
+    return list
+  },
+  redirect: async function (context: PopulatedRequest) {
+    const { code } = context.params
+    const url = await knex.from('urls')
+      .where({ code, active: true, shareable: true })
+      .first()
+    if (!url) throw new BadRequest('This name was not found')
 
     await knex.from('urls').update({ clicks: Number(url.clicks) + 1 }).where({ code })
-    return res.redirect(url.redirectUrl)
+    return {
+      shouldRedirect: true,
+      url: url.redirectUrl
+    }
   },
-  getOne: async function (req: PopulatedRequest, res: Response) {
-    const { identifier } = req.params
+  getOne: async function (context: PopulatedRequest) {
+    const { identifier } = context.params
 
     const url = await knex.from('urls')
-      .where({ code: identifier, userId: req.user.id })
-      .orWhere({ id: identifier, userId: req.user.id })
+      .where({ code: identifier, userId: context.user.id })
+      .orWhere({ id: identifier, userId: context.user.id })
       .first()
 
-    if (!url) return res.status(400).send('This code does not exist or you do not own it')
+    if (!url) throw new BadRequest('This code does not exist or you do not own it')
 
-    return res.status(200).send(url)
+    return url
   },
-  getUserUrls: async (req: PopulatedRequest, res: Response) => {
+  getUserUrls: async (context: PopulatedRequest) => {
     const urls = await knex.from('urls')
-      .where({ userId: req.user.id, active: true })
+      .where({ userId: context.user.id, active: true })
 
-    return res.json(urls)
+    return urls
   },
-  delete: async function (req: PopulatedRequest, res: Response) {
-    const { urlId } = req.params
-    const userId = req.user.id
-    console.log(req.user.id)
+  delete: async function (context: PopulatedRequest) {
+    const { urlId } = context.params
+    const userId = context.user.id
     const url = await knex.from('urls').where({ id: urlId, active: true, userId }).first()
 
-    if (!url) return res.status(404).send('Url was not found')
+    if (!url) throw new NotFound('Url was not found')
 
     await knex.from('urls').update({ active: false }).where({ id: urlId })
-    return res.status(200).send('Url deleted successfully!')
+    return {
+      message: 'Url was deleted successfully!'
+    }
   }
 }
 export default url

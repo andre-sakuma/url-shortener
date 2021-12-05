@@ -4,6 +4,7 @@ export async function up(knex: Knex) {
   return knex.schema.createTable('users', table => {
     table.uuid('id').primary()
     table.boolean('active').notNullable()
+    table.boolean('isAdmin').notNullable()
     table.string('username').notNullable()
     table.string('email').notNullable()
     table.string('password').notNullable()

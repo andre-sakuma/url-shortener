@@ -5,5 +5,6 @@ export interface PopulatedRequest extends Request {
     id: string
     email: string
     username: string
+    isAdmin: boolean
   }
 }

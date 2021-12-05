@@ -4,41 +4,51 @@ import * as uniqid from 'uniqid'
 import { sign } from 'jsonwebtoken'
 import { compare, genSalt, hash } from 'bcrypt'
 import { User } from './types'
+import { PopulatedRequest } from '../../helpers/generalTypes'
+import BadRequest from '../../errors/BadRequest'
+import NotFound from '../../errors/NotFound'
+import Unauthorized from '../../errors/Unauthorized'
 
 const user = {
-  login: async (req: Request, res: Response) => {
-    const { username, password } = req.body
-    if (!username || !password) return res.status(400).send('username or password is missing')
+  login: async (context: PopulatedRequest) => {
+    const { username, password } = context.body
+    if (!username || !password) throw new BadRequest('username or password is missing')
 
     const user: User = await knex.from('users').first()
       .where({ active: true, username })
       .orWhere({ active: true, email: username })
       .first()
   
-    if (!user) return res.status(404).send('user not found')
+    if (!user) throw new NotFound('user not found')
     
     const isValid = await compare(password, user.password)
-    if (!isValid) return res.status(401).send('invalid credentials')
+    if (!isValid) throw new Unauthorized('invalid credentials')
 
     const payload = {
       username: user.username,
       email: user.email,
       id: user.id,
     }
-    const token = sign(payload, process.env.TOKEN_SECRET, { expiresIn: '1d' })
+    const token = sign(payload, process.env.TOKEN_SECRET, { expiresIn: 60*20 }) // expires in 20 minutes
 
-    return res.json(token)
+    return { token }
   },
-  create: async function (req: Request, res: Response) {
-    const { username, password, email } = req.body
-    if(!username || !password || !email) return res.status(400).send('username or id or or email is missing')
+  create: async function (context: PopulatedRequest) {
+    const { username, password, email, isAdmin = false } = context.body
+ 
+    const secret = context.headers['secret']
+    if (isAdmin && secret !== process.env.SECRET) {
+      throw new Unauthorized('you are not allowed to create an admin')
+    }
+
+    if(!username || !password || !email) throw new BadRequest('username or id or or email is missing')
     const duplicatedUser = await knex.from('users')
       .where({ username })
       .orWhere({ email })
       .select('username', 'email')
       .first()
 
-    if (duplicatedUser) return res.status(400).send('This username or email is already in use')
+    if (duplicatedUser) throw new BadRequest('This username or email is already in use')
 
     const id = uniqid()
     const createdAt = new Date()
@@ -53,31 +63,34 @@ const user = {
       email,
       password: hashPassword,
       createdAt,
-      active
+      active,
+      isAdmin,
     }
 
     const trx = await knex.transaction()
     await trx('users').insert(user)
     await trx.commit()
 
-    return res.json(id)
+    return { id }
   },
-  list: async function (req: Request, res: Response) {
+  list: async function (context: PopulatedRequest) {
     const list = await knex.from('users').select('username', 'email').where({active: true})
-    return res.status(200).send(list)
+    return list
   },
-  getOne: async function (req: Request, res: Response) {
-    const { username } = req.params
+  getOne: async function (context: PopulatedRequest) {
+    const { username } = context.params
     const user = await knex.from('users').where({ username }).first()
-    if (!user) return res.status(400).send('user was not found')
+    if (!user) throw new BadRequest('user was not found')
 
-    return res.status(200).send(user)
+    return user
   },
-  delete: async function (req: Request, res: Response) {
-    const { userId } = req.params
+  delete: async function (context: PopulatedRequest) {
+    const { userId } = context.params
 
     await knex.from('users').update({ active: false }).where({ id: userId })
-    return res.status(200).send('User deleted successfully!')
+    return {
+      message: 'User was deleted successfully!'
+    }
   }
 }
 export default user

@@ -1,6 +1,8 @@
 import { NextFunction } from 'express'
 import { verify } from 'jsonwebtoken'
 import knex from '../database/connection'
+import BadRequest from '../errors/BadRequest'
+import Unauthorized from '../errors/Unauthorized'
 
 
 export default async function validation(
@@ -16,9 +18,9 @@ export default async function validation(
     const { id, email, username } = decoded
     const user = await knex.from('users')
       .where({ id, email, username, active: true })
-      .select('id', 'email', 'username')
+      .select('id', 'email', 'username', 'isAdmin')
       .first()
-    if (!user) throw new Error('invalid token')
+    if (!user) throw new Unauthorized('invalid token')
 
     request.user = user
     return next()

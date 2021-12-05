@@ -2,14 +2,16 @@ import { Request, Response } from 'express'
 import knex from '../../database/connection'
 import * as uniqid from 'uniqid'
 import { Category } from './types'
+import BadRequest from '../../errors/BadRequest'
+import { PopulatedRequest } from '../../helpers/generalTypes'
 
 const category = {
-  create: async function (req: Request, res: Response) {
-    const { name } = req.body
-    if(!name) return res.status(400).send('username or id or or email is missing')
+  create: async function (context: PopulatedRequest) {
+    const { name } = context.body
+    if(!name) throw new BadRequest('username or id or or email is missing')
 
     const duplicatedCategory = await knex.from('categories').where({ name }).select('name').first()
-    if (duplicatedCategory) return res.status(400).send('This name is already in use')
+    if (duplicatedCategory) throw new BadRequest('This name is already in use')
 
     const id = uniqid()
     const createdAt = new Date()
@@ -26,24 +28,26 @@ const category = {
     await trx('categories').insert(category)
     await trx.commit()
 
-    return res.json(id)
+    return { id }
   },
-  list: async function (req: Request, res: Response) {
-    const list = await knex.from('categories').select('name').where({ active: true })
-    return res.status(200).send(list)
+  list: async function (context: PopulatedRequest) {
+    const list = await knex.from('categories').select('name', 'id').where({ active: true })
+    return list
   },
-  getOne: async function (req: Request, res: Response) {
-    const { categoryId } = req.params
+  getOne: async function (context: PopulatedRequest) {
+    const { categoryId } = context.params
     const category = await knex.from('categories').where({ id: categoryId }).first()
-    if (!category) return res.status(400).send('category was not found')
+    if (!category) throw new BadRequest('category was not found')
 
-    return res.status(200).send(category)
+    return category
   },
-  delete: async function (req: Request, res: Response) {
-    const { categoryId } = req.params
+  delete: async function (context: PopulatedRequest) {
+    const { categoryId } = context.params
 
     await knex.from('categories').update({ active: false }).where({ id: categoryId })
-    return res.status(200).send('Category was deleted successfully!')
+    return {
+      message: 'Category was deleted successfully!'
+    }
   }
 }
 export default category
